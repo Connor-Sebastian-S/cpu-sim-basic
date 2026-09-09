@@ -1,0 +1,1080 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CPU Foundations — Fetch · Decode · Execute</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+
+:root{
+  --paper:      #f6f4ee;
+  --paper-line: #e4e0d2;
+  --ink:        #1c2541;
+  --ink-soft:   #5b6478;
+  --ink-faint:  #9aa0af;
+  --line:       #c9c4b2;
+  --panel:      #fffdf7;
+  --copper:     #c97a2b;
+  --copper-soft:#e9c9a4;
+  --teal:       #3f7368;
+  --teal-soft:  #d9e8e4;
+  --brick:      #b5524a;
+  --brick-soft: #f0dad8;
+  --radius:     3px;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --sans: 'IBM Plex Sans', system-ui, sans-serif;
+}
+
+*{ box-sizing:border-box; }
+html,body{ height:100%; }
+body{
+  margin:0;
+  font-family:var(--sans);
+  color:var(--ink);
+  background:
+    linear-gradient(var(--paper-line) 1px, transparent 1px) 0 0/100% 28px,
+    linear-gradient(90deg, var(--paper-line) 1px, transparent 1px) 0 0/28px 100%,
+    var(--paper);
+  background-blend-mode:multiply;
+}
+h1,h2,h3{ margin:0; font-family:var(--sans); }
+button{ font-family:var(--sans); }
+::selection{ background:var(--copper-soft); }
+
+/* ── topbar ──────────────────────────────────────────────────────── */
+.topbar{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 22px; border-bottom:1px solid var(--line);
+  background:rgba(255,253,247,.86); backdrop-filter:blur(2px);
+}
+.brand{ display:flex; align-items:baseline; gap:10px; }
+.brand-mark{
+  font-family:var(--mono); font-weight:600; font-size:13px;
+  color:var(--paper); background:var(--ink);
+  padding:3px 7px; border-radius:2px; letter-spacing:.08em;
+}
+.brand-name{ font-weight:700; font-size:17px; letter-spacing:-.01em; }
+.brand-sub{ font-size:12px; color:var(--ink-soft); margin-left:2px; }
+.topbar-right{ display:flex; align-items:center; gap:14px; }
+.badge{
+  font-family:var(--mono); font-size:11px; letter-spacing:.03em;
+  color:var(--ink-soft); border:1px solid var(--line); border-radius:20px;
+  padding:4px 10px; background:var(--panel);
+}
+.link-out{
+  font-family:var(--mono); font-size:12px; color:var(--ink);
+  text-decoration:none; border-bottom:1px dashed var(--ink-soft);
+}
+.link-out:hover{ color:var(--copper); border-color:var(--copper); }
+
+/* ── layout ──────────────────────────────────────────────────────── */
+.workspace{
+  display:grid;
+  grid-template-columns:300px 1fr 300px;
+  gap:16px; padding:16px 18px 28px;
+  align-items:start;
+}
+@media (max-width:1180px){
+  .workspace{ grid-template-columns:1fr; }
+}
+
+.panel{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:14px 14px 16px;
+  margin-bottom:14px;
+  position:relative;
+}
+/* corner ticks — the one small "drafting" flourish, used sparingly */
+.panel::before, .panel::after{
+  content:''; position:absolute; width:7px; height:7px;
+  border-top:1.5px solid var(--ink-faint); border-left:1.5px solid var(--ink-faint);
+  top:-1px; left:-1px;
+}
+.panel::after{
+  left:auto; right:-1px; top:auto; bottom:-1px;
+  border-top:none; border-left:none;
+  border-bottom:1.5px solid var(--ink-faint); border-right:1.5px solid var(--ink-faint);
+}
+.panel-title{
+  font-size:11px; font-weight:600; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--ink-soft); margin-bottom:10px;
+}
+.panel-subtitle{
+  font-size:10px; font-weight:600; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--ink-faint); margin:12px 0 6px;
+}
+
+.field-label{
+  display:block; font-size:10px; font-weight:600; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--ink-faint); margin:10px 0 4px;
+}
+.field-label:first-of-type{ margin-top:0; }
+
+select{
+  width:100%; font-family:var(--mono); font-size:12.5px; color:var(--ink);
+  background:var(--paper); border:1px solid var(--line); border-radius:2px;
+  padding:6px 8px;
+}
+textarea{
+  width:100%; height:150px; resize:vertical;
+  font-family:var(--mono); font-size:12.5px; line-height:1.55; color:var(--ink);
+  background:#fffef9; border:1px solid var(--line); border-radius:2px;
+  padding:9px 10px; tab-size:4;
+}
+textarea:focus, select:focus{ outline:2px solid var(--copper-soft); outline-offset:1px; }
+
+.btn{
+  font-family:var(--sans); font-weight:600; font-size:12.5px;
+  border-radius:2px; border:1px solid var(--ink); cursor:pointer;
+  padding:8px 12px; transition:transform .06s ease;
+}
+.btn:active{ transform:translateY(1px); }
+.btn-primary{
+  width:100%; margin-top:10px;
+  background:var(--ink); color:var(--paper);
+}
+.btn-primary:hover{ background:#2a3557; }
+.btn-primary:disabled{ opacity:.5; cursor:default; }
+
+.error-box{
+  margin-top:10px; font-family:var(--mono); font-size:11.5px;
+  color:var(--brick); background:var(--brick-soft);
+  border:1px solid var(--brick); border-radius:2px; padding:8px 9px;
+}
+
+.listing{ font-family:var(--mono); font-size:12px; max-height:220px; overflow:auto; }
+.listing-row{
+  display:grid; grid-template-columns:38px 1fr; gap:8px;
+  padding:3px 6px; border-radius:2px; color:var(--ink-soft);
+  white-space:pre;
+}
+.listing-row .addr{ color:var(--ink-faint); }
+.listing-row.active{
+  background:var(--copper-soft); color:var(--ink); font-weight:600;
+}
+.listing-row.active .addr{ color:var(--copper); }
+
+.transport{ display:flex; gap:6px; margin-bottom:10px; }
+.transport button{
+  flex:1; font-family:var(--mono); font-size:14px;
+  border:1px solid var(--line); background:var(--paper); color:var(--ink);
+  border-radius:2px; padding:7px 0; cursor:pointer;
+}
+.transport button:hover{ border-color:var(--ink); }
+.transport button:disabled{ opacity:.4; cursor:default; }
+#btn-play.playing{ background:var(--copper); color:#fff; border-color:var(--copper); }
+input[type=range]{ width:100%; accent-color:var(--copper); }
+.progress-label{
+  font-family:var(--mono); font-size:11px; color:var(--ink-soft); margin-top:6px;
+}
+
+/* ── center column: cycle track + schematic + narration ─────────── */
+.cycle-track{
+  display:flex; align-items:center; justify-content:center; gap:10px;
+  margin-bottom:16px; flex-wrap:wrap;
+}
+.cycle-stage{
+  display:flex; align-items:center; gap:8px;
+  border:1px solid var(--line); background:var(--panel);
+  border-radius:20px; padding:6px 16px 6px 10px;
+  transition:background .15s ease, border-color .15s ease, color .15s ease;
+}
+.stage-num{
+  width:20px; height:20px; border-radius:50%; display:flex; align-items:center;
+  justify-content:center; font-family:var(--mono); font-size:11px; font-weight:600;
+  background:var(--ink); color:var(--paper);
+}
+.stage-label{ font-weight:600; font-size:13px; letter-spacing:.02em; }
+.cycle-arrow{ color:var(--ink-faint); font-size:16px; }
+.cycle-arrow-loop{ font-size:18px; }
+.cycle-stage.active{ background:var(--copper-soft); border-color:var(--copper); }
+.cycle-stage.active .stage-num{ background:var(--copper); }
+
+.schematic{
+  background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+  padding:22px 18px 18px; position:relative; margin-bottom:16px;
+}
+.chip{
+  border:1.5px solid var(--ink); border-radius:4px; padding:12px;
+  background:#fffef9;
+}
+.chip-label{
+  font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.1em;
+  color:var(--ink-soft); text-transform:uppercase; margin-bottom:8px;
+}
+.chip-row{ display:flex; gap:10px; margin-bottom:10px; }
+.block{
+  flex:1; border:1px solid var(--line); border-radius:3px; padding:9px 10px;
+  background:var(--paper); transition:background .18s ease, border-color .18s ease;
+}
+.block-title{ font-weight:600; font-size:12.5px; }
+.block-sub{ font-size:10.5px; color:var(--ink-soft); margin-top:1px; }
+.block.active{ background:var(--teal-soft); border-color:var(--teal); }
+
+.reg-grid, .gp-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+.gp-grid{ grid-template-columns:repeat(3,1fr); margin-top:8px; }
+.reg-cell{
+  border:1px solid var(--line); border-radius:2px; padding:5px 6px;
+  background:var(--paper); transition:background .18s ease, border-color .18s ease;
+}
+.reg-cell .rname{
+  font-family:var(--mono); font-size:9.5px; color:var(--ink-soft); letter-spacing:.03em;
+}
+.reg-cell .rval{ font-family:var(--mono); font-size:13px; font-weight:600; }
+.reg-cell.active{ background:var(--copper-soft); border-color:var(--copper); }
+.reg-cell.acc{ border-style:dashed; }
+
+.bus-rack{ margin:16px 4px; display:flex; flex-direction:column; gap:10px; }
+.bus-lane{ display:grid; grid-template-columns:96px 1fr 90px; align-items:center; gap:10px; }
+.bus-name{
+  font-family:var(--mono); font-size:10.5px; color:var(--ink-soft); text-align:right;
+}
+.bus-track{
+  position:relative; height:3px; background:var(--line); border-radius:2px;
+}
+.bus-track::before, .bus-track::after{
+  content:''; position:absolute; top:-3px; width:9px; height:9px;
+  border:1.5px solid var(--ink); border-radius:1px; background:var(--panel);
+}
+.bus-track::before{ left:-4px; }
+.bus-track::after{ right:-4px; }
+.bus-dot{
+  position:absolute; top:-3.5px; width:10px; height:10px; border-radius:50%;
+  background:var(--copper); left:0%; opacity:0;
+  box-shadow:0 0 0 4px rgba(201,122,43,.18);
+  transition:left .55s cubic-bezier(.4,0,.2,1), opacity .2s ease;
+}
+.bus-lane.active .bus-track{ background:var(--copper-soft); }
+.bus-lane.active .bus-dot{ opacity:1; }
+.bus-value{
+  font-family:var(--mono); font-size:12px; font-weight:600; color:var(--ink-soft);
+}
+.bus-lane.active .bus-value{ color:var(--ink); }
+
+.mem-readout{ display:flex; justify-content:space-between; align-items:baseline; font-family:var(--mono); }
+.mem-readout > div:first-child{ font-size:11.5px; color:var(--ink-soft); }
+#mem-value{ font-size:15px; font-weight:600; }
+
+.narration{
+  background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+  padding:14px 16px;
+}
+.narration-phase{
+  display:inline-block; font-family:var(--mono); font-size:10.5px; font-weight:600;
+  letter-spacing:.08em; text-transform:uppercase; color:#fff; background:var(--ink);
+  border-radius:2px; padding:3px 8px; margin-bottom:8px;
+}
+.narration-desc{ font-size:14.5px; font-weight:600; margin-bottom:4px; }
+.narration-detail{ font-size:12.5px; color:var(--ink-soft); line-height:1.5; }
+
+/* ── right column: registers, flags, activity log ────────────────── */
+.reg-table{ width:100%; border-collapse:collapse; font-family:var(--mono); font-size:12px; }
+.reg-table td{ padding:4px 2px; border-bottom:1px dotted var(--line); }
+.reg-table td:first-child{ color:var(--ink-soft); width:40%; }
+.reg-table td:last-child{ text-align:right; font-weight:600; }
+.reg-table tr.changed td{ color:var(--copper); }
+
+.flags-row{ display:flex; gap:8px; flex-wrap:wrap; }
+.flag-chip{
+  font-family:var(--mono); font-size:11.5px; font-weight:600;
+  border:1px solid var(--line); border-radius:20px; padding:4px 10px;
+  color:var(--ink-faint); background:var(--paper);
+}
+.flag-chip.set{ background:var(--teal-soft); border-color:var(--teal); color:var(--teal); }
+
+.activity-log{ font-family:var(--mono); font-size:11px; max-height:210px; overflow:auto; }
+.log-row{
+  display:grid; grid-template-columns:16px 1fr auto; gap:6px;
+  padding:3px 2px; border-bottom:1px dotted var(--line); color:var(--ink-soft);
+}
+.log-row .op{ font-weight:700; }
+.log-row .op.rd{ color:var(--teal); }
+.log-row .op.wr{ color:var(--copper); }
+.log-row:last-child.newest{ color:var(--ink); }
+
+/* ── terminal (keyboard in / screen out) ─────────────────────────── */
+#stdin-input{
+  width:100%; font-family:var(--mono); font-size:12.5px; color:var(--ink);
+  background:#fffef9; border:1px solid var(--line); border-radius:2px;
+  padding:6px 8px;
+}
+#stdin-input:focus{ outline:2px solid var(--copper-soft); outline-offset:1px; }
+.stdin-hint{ font-size:10px; color:var(--ink-faint); margin-top:4px; line-height:1.4; }
+.terminal-screen{
+  font-family:var(--mono); font-size:14px; line-height:1.6; color:var(--ink);
+  background:#fffef9; border:1px solid var(--line); border-radius:2px;
+  padding:9px 10px; min-height:44px; white-space:pre-wrap; word-break:break-all;
+}
+.terminal-cursor{ display:inline-block; width:7px; background:var(--copper); animation:blink 1s step-end infinite; }
+.terminal-cursor::after{ content:'\00a0'; }
+@keyframes blink{ 0%,100%{ opacity:1; } 50%{ opacity:0; } }
+.terminal-empty{ color:var(--ink-faint); }
+
+/* ── C++ / assembly comparison ───────────────────────────────────── */
+#compare-panel{ display:none; margin-top:16px;}
+#compare-panel.show{ display:block; }
+.compare-cols{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.compare-col-label{
+  font-family:var(--font-ui, var(--sans)); font-size:10px; font-weight:600; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--ink-faint); margin-bottom:4px;
+}
+.compare-code{
+  font-family:var(--mono); font-size:11px; line-height:1.55; color:var(--ink);
+  background:#fffef9; border:1px solid var(--line); border-radius:2px;
+  padding:8px 9px; white-space:pre; overflow-x:auto;
+}
+.compare-note{ font-size:11px; color:var(--ink-soft); line-height:1.5; margin-top:8px; }
+
+.footnote{
+  font-size:11px; color:var(--ink-faint); padding:0 22px 18px; max-width:760px;
+}
+</style>
+</head>
+<body>
+
+
+<div class="workspace">
+
+  <!-- ═══════════════════ LEFT: program + transport ═══════════════════ -->
+  <aside class="col-program">
+    <section class="panel">
+      <h2 class="panel-title">Program</h2>
+      <label class="field-label">Architecture</label>
+      <select id="config-select"></select>
+      <div class="stdin-hint" id="config-hint"></div>
+      <label class="field-label">Example</label>
+      <select id="example-select"></select>
+      <label class="field-label">Assembly</label>
+      <textarea id="asm-input" spellcheck="false"></textarea>
+      <label class="field-label">Keyboard Input (Stdin)</label>
+      <input type="text" id="stdin-input" placeholder="e.g. Hi! (one character per IN port, up to 8)" maxlength="8">
+      <div class="stdin-hint">Only used by programs that read the keyboard with <code>IN</code>. Each character fills the next input port (0, 1, 2…), in order.</div>
+      <button id="btn-run" class="btn btn-primary">Assemble &amp; Run</button>
+      <div id="asm-error" class="error-box" hidden></div>
+    </section>
+
+    <section class="panel">
+      <h2 class="panel-title">Instruction Listing</h2>
+      <div id="listing" class="listing"><span style="color:var(--ink-faint)">Run a program to see it here.</span></div>
+    </section>
+
+    <section class="panel">
+      <h2 class="panel-title">Playback</h2>
+      <div class="transport">
+        <button id="btn-reset" title="Restart">⟲</button>
+        <button id="btn-prev" title="Previous step">◀</button>
+        <button id="btn-play" title="Play / pause">▶</button>
+        <button id="btn-next" title="Next step">▶</button>
+      </div>
+      <label class="field-label">Speed</label>
+      <input type="range" id="speed" min="200" max="1600" value="650">
+      <label class="field-label">Max Cycles <span id="cycles-val"></span></label>
+      <input type="range" id="cycles" min="100" max="4000" step="100" value="500">
+      <div class="progress-label" id="progress-label">Step 0 / 0</div>
+    </section>
+  </aside>
+
+  <!-- ═══════════════════ CENTER: diagram + narration ══════════════════ -->
+  <main class="col-diagram">
+
+    <div class="cycle-track">
+      <div class="cycle-stage" data-stage="fetch">
+        <span class="stage-num">1</span><span class="stage-label">Fetch</span>
+      </div>
+      <span class="cycle-arrow">→</span>
+      <div class="cycle-stage" data-stage="decode">
+        <span class="stage-num">2</span><span class="stage-label">Decode</span>
+      </div>
+      <span class="cycle-arrow">→</span>
+      <div class="cycle-stage" data-stage="execute">
+        <span class="stage-num">3</span><span class="stage-label">Execute</span>
+      </div>
+      <span class="cycle-arrow cycle-arrow-loop" title="Repeats for the next instruction">↻</span>
+    </div>
+
+    <div class="schematic">
+      <div class="chip" id="chip-cpu">
+        <div class="chip-label">CPU</div>
+        <div class="chip-row">
+          <div class="block block-cu" id="block-cu">
+            <div class="block-title">Control Unit</div>
+            <div class="block-sub">incl. decoder</div>
+          </div>
+          <div class="block block-alu" id="block-alu">
+            <div class="block-title">ALU</div>
+            <div class="block-sub">arithmetic / logic</div>
+          </div>
+        </div>
+
+        <div class="reg-grid">
+          <div class="reg-cell" id="reg-PC"><div class="rname">PC — Program Counter</div><div class="rval">0x00</div></div>
+          <div class="reg-cell" id="reg-IR"><div class="rname">IR — Instruction Reg.</div><div class="rval">—</div></div>
+          <div class="reg-cell" id="reg-SP"><div class="rname">SP — Stack Pointer</div><div class="rval">0x00</div></div>
+          <div class="reg-cell" id="reg-MAR"><div class="rname">MAR — Mem. Address</div><div class="rval">0x00</div></div>
+          <div class="reg-cell" id="reg-MDR"><div class="rname">MDR — Mem. Data</div><div class="rval">0x00</div></div>
+          <div class="reg-cell acc" id="reg-ACC"><div class="rname">Accumulator (A)</div><div class="rval">0x00</div></div>
+        </div>
+
+        <div class="panel-subtitle" style="margin-top:10px;">General-purpose</div>
+        <div class="gp-grid" id="gp-grid">
+          <div class="reg-cell" id="reg-GP0"><div class="rname">B</div><div class="rval">0x00</div></div>
+          <div class="reg-cell" id="reg-GP1"><div class="rname">C</div><div class="rval">0x00</div></div>
+          <div class="reg-cell" id="reg-GP2"><div class="rname">D</div><div class="rval">0x00</div></div>
+        </div>
+      </div>
+
+      <div class="bus-rack">
+        <div class="bus-lane" data-bus="address">
+          <div class="bus-name">Address Bus</div>
+          <div class="bus-track"><div class="bus-dot" id="dot-address"></div></div>
+          <div class="bus-value" id="val-address">—</div>
+        </div>
+        <div class="bus-lane" data-bus="data">
+          <div class="bus-name">Data Bus</div>
+          <div class="bus-track"><div class="bus-dot" id="dot-data"></div></div>
+          <div class="bus-value" id="val-data">—</div>
+        </div>
+        <div class="bus-lane" data-bus="control">
+          <div class="bus-name">Control Bus</div>
+          <div class="bus-track"><div class="bus-dot" id="dot-control"></div></div>
+          <div class="bus-value" id="val-control">—</div>
+        </div>
+      </div>
+
+      <div class="chip" id="chip-mem">
+        <div class="chip-label">Main Memory</div>
+        <div class="mem-readout">
+          <div>Accessing address <span id="mem-addr" style="color:var(--ink);">—</span></div>
+          <div id="mem-value">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="narration">
+      <span class="narration-phase" id="narration-phase">IDLE</span>
+      <div class="narration-desc" id="narration-desc">Assemble a program on the left to start the cycle.</div>
+      <div class="narration-detail" id="narration-detail">Address bus flows CPU → memory only. Data bus is bi‑directional. Control bus carries the read/write/timing/interrupt/reset lines.</div>
+    </div>
+
+    <section class="panel" id="compare-panel">
+      <h2 class="panel-title">C++ vs. Assembly</h2>
+      <div class="compare-cols">
+        <div>
+          <div class="compare-col-label">C++ (the idea)</div>
+          <div class="compare-code" id="compare-cpp"></div>
+        </div>
+        <div>
+          <div class="compare-col-label">This CPU's assembly</div>
+          <div class="compare-code" id="compare-asm"></div>
+        </div>
+      </div>
+      <div class="compare-note" id="compare-note"></div>
+    </section>
+
+  </main>
+
+  
+
+
+  <!-- ═══════════════════ RIGHT: registers / flags / log ═══════════════ -->
+  <aside class="col-state">
+    <section class="panel">
+      <h2 class="panel-title">Registers</h2>
+      <table class="reg-table" id="reg-table-special"></table>
+      <div class="panel-subtitle">Flags</div>
+      <div class="flags-row" id="flags-row"></div>
+    </section>
+
+    <section class="panel">
+      <h2 class="panel-title">Terminal (screen out)</h2>
+      <div class="terminal-screen" id="terminal-screen"><span class="terminal-empty">Nothing printed yet.</span></div>
+    </section>
+
+    <section class="panel">
+      <h2 class="panel-title">Bus Activity Log</h2>
+      <div id="activity-log" class="activity-log"><span style="color:var(--ink-faint)">Nothing yet.</span></div>
+    </section>
+  </aside>
+
+</div>
+
+<p class="footnote">
+  This view intentionally leaves out cache, pipelining, branch prediction, out-of-order
+  execution and DMA — those belong to the full visualiser. Instructions with an operand
+  need one or two extra fetch cycles to read that operand byte, which is why the number
+  of Fetch steps varies slightly between instructions.
+</p>
+
+<script>
+const SIMPLE_EXAMPLES = [
+  { key: "add_two_numbers",      label: "Add Two Numbers (course example)", group: "Arithmetic & Logic" },
+  { key: "multiply_by_addition", label: "Multiply via Repeated Addition",   group: "Arithmetic & Logic", minCycles: 1200 },
+  { key: "sum_1_to_n",           label: "Sum 1 to 5",                      group: "Arithmetic & Logic", minCycles: 1000 },
+  { key: "max_of_two",           label: "Max of Two Numbers",              group: "Arithmetic & Logic", minCycles: 400 },
+
+  { key: "counting_loop",         label: "Counting Loop (0 → 5)",                  group: "Loops & Branches" },
+  { key: "countdown",             label: "Countdown (5 → 1)",                      group: "Loops & Branches" },
+  { key: "branch_demo",           label: "Compare & Branch",                       group: "Loops & Branches" },
+  { key: "fibonacci_sequence",    label: "Fibonacci Sequence",                     group: "Loops & Branches", minCycles: 2500 },
+  { key: "power_of_two_doubling", label: "Powers of Two (bit-shift via doubling)", group: "Loops & Branches", minCycles: 1200 },
+
+  { key: "string_echo",   label: "Keyboard → Screen (string echo)",  group: "Input / Output" },
+  { key: "keyboard_echo", label: "Keyboard Echo (case conversion)",  group: "Input / Output" },
+  { key: "caesar_cipher", label: "Caesar Cipher (encode + decode)",  group: "Input / Output", minCycles: 400 },
+
+  { key: "stack_push_pop",      label: "Stack: Push & Pop",                     group: "Stack & Subroutines" },
+  { key: "odd_even_subroutine", label: "Subroutine: Odd or Even (CALL/RET)",    group: "Stack & Subroutines" },
+
+  { key: "rocket_countdown", label: "Rocket Countdown 🚀", group: "For Fun", minCycles: 500 },
+];
+
+// Static, hand-written C++ ⟷ assembly pairings for the curated examples
+// above. This is illustrative, not a compiler: this simulator's ISA is a
+// fictional single-accumulator teaching design, so there's no real C++
+// compiler targeting it. The point is to show *the shape* of the
+// translation — variables becoming registers/memory, loops becoming
+// compare-and-jump, function calls becoming CALL/RET over a stack.
+const COMPARE_DATA = {
+  add_two_numbers: {
+    cpp: `int a = 9;\nint b = 10;\nint result = a + b;`,
+    note: "One CPU register (the accumulator) does the work of both b and result here — once ADD runs, b's value is gone, folded into A. C++ keeps three separate named variables; the assembly only ever has one place to hold a value at a time."
+  },
+  counting_loop: {
+    cpp: `int count = 0;\nwhile (count != 5) {\n    output(count);\n    count = count + 1;\n}`,
+    note: "while's condition becomes CMP + JNZ: compare, then jump back to the top of the loop if the comparison didn't come out zero."
+  },
+  countdown: {
+    cpp: `int count = 5;\nwhile (count != 0) {\n    output(count);\n    count = count - 1;\n}`,
+    note: "Same loop shape as Counting Loop, just SUB instead of ADD and a different starting value — a good place to compare the two side by side."
+  },
+  branch_demo: {
+    cpp: `int a = mem[0xA0];\nif (a == 10) {\n    output(a ^ 0xFF);\n} else {\n    output(a);\n}`,
+    note: "if/else becomes CMP followed by a conditional jump (JZ) over the 'else' branch — there's no if statement in the CPU, only 'jump somewhere else if a condition holds'."
+  },
+  string_echo: {
+    cpp: `for (int i = 0; i < 5; i++) {\n    char c = readChar();\n    putChar(c);\n}`,
+    note: "C++'s for loop is unrolled here into five repeated IN/OUT pairs. This ISA has no way to use a loop counter as a changing port number, so looping the actual C++ way isn't possible — each character needs its own instructions."
+  },
+  keyboard_echo: {
+    cpp: `char c = readChar();\nputChar(c);\nputChar(tolower(c));\nputChar(toupper(c));`,
+    note: "tolower/toupper become a single bitwise OR or AND against 0x20 — ASCII letters differ from their opposite case by exactly one bit."
+  },
+  stack_push_pop: {
+    cpp: `int a = mem[0xA0];\npush(a);\npush(a + 1);\npush(a + 2);\noutput(pop());\noutput(pop());\noutput(pop());`,
+    note: "The stack is Last-In-First-Out, so the three pops come back in reverse order from how they were pushed — notice SP moving down on PUSH and back up on POP in the register panel."
+  },
+  odd_even_subroutine: {
+    cpp: `int isOdd(int n) { return n & 1; }\n\noutput(isOdd(66));\noutput(isOdd(67));\noutput(isOdd(200));`,
+    note: "A C++ function call becomes CALL/RET: CALL pushes the return address onto the stack so RET knows where to jump back to — that's what makes the same subroutine reusable for all three calls."
+  },
+  multiply_by_addition: {
+    cpp: `int total = 0;\nint counter = 7;\nwhile (counter != 0) {\n    total = total + 6;\n    counter = counter - 1;\n}\noutput(total);`,
+    note: "There's no MUL instruction here, so multiplication is built out of a loop of additions — which is exactly what multiplication means underneath, just without hardware to do it in one step."
+  },
+  sum_1_to_n: {
+    cpp: `int sum = 0;\nfor (int i = 1; i <= 5; i++) {\n    sum = sum + i;\n}\noutput(sum);`,
+    note: "ADDM adds the contents of a memory address instead of a fixed constant — that's what lets sum += i work when i is a variable rather than a number baked into the instruction."
+  },
+  max_of_two: {
+    cpp: `int a = 42, b = 17;\nif (a > b) {\n    output(a);\n} else {\n    output(b);\n}`,
+    note: "This ISA only has 'jump if zero' / 'jump if not zero' — no direct 'jump if greater than'. So a > b is rebuilt from a subtraction plus a bit-mask: if a - b comes out negative, its top bit (0x80) is set, and masking that bit out turns 'is it negative' into something JZ/JNZ can test."
+  },
+  fibonacci_sequence: {
+    cpp: `int prev = 0, curr = 1;\nfor (int i = 0; i < 6; i++) {\n    output(prev);\n    int next = prev + curr;\n    prev = curr;\n    curr = next;\n}`,
+    note: "Three C++ variables (prev, curr, next) become three memory cells, since there's only one register — the accumulator — to actually compute with. Every step has to load a value in before it can be used."
+  },
+  caesar_cipher: {
+    cpp: `char c = readChar();\nchar encoded = c + 3;\nputChar(encoded);\nchar decoded = encoded - 3;\nputChar(decoded);`,
+    note: "A Caesar cipher really is just addition — shifting a letter's ASCII code up by a fixed amount to encode, and back down by the same amount to decode."
+  },
+  rocket_countdown: {
+    cpp: `std::cout << "3\\n2\\n1\\nGO!";`,
+    note: "A whole C++ string literal becomes one OUT per character here — this ISA can't print a string in a single instruction, so 'printing text' really means 'printing bytes, one at a time,' which is what happens underneath cout anyway."
+  },
+  power_of_two_doubling: {
+    cpp: `int value = 1;\nfor (int i = 0; i < 6; i++) {\n    output(value);\n    value = value * 2;   // same as value << 1\n}`,
+    note: "No shift instruction exists here, so x * 2 is done as x + x — which is exactly what shifting every bit up one place (a left shift by one) actually does."
+  },
+};
+
+let runData = null;       // full /run_asm response
+let steps = [];           // filtered, display-worthy steps
+let stepIdx = -1;         // -1 = before first step
+let addrToLine = {};      // instruction addr -> disassembly/source_map row
+let currentInstrAddr = null;
+let playTimer = null;
+
+const $ = (id) => document.getElementById(id);
+
+// ── architecture / config select ───────────────────────────────────
+let CONFIGS_DATA = {};
+const CONFIG_ORDER = ['microcontroller', 'embedded_16bit', 'modern_desktop'];
+
+async function loadConfigs(){
+  try{
+    const res = await fetch('/configs');
+    CONFIGS_DATA = await res.json();
+  }catch(e){ CONFIGS_DATA = {}; }
+  const sel = $('config-select');
+  sel.innerHTML = '';
+  for (const key of CONFIG_ORDER){
+    const cfg = CONFIGS_DATA[key];
+    if (!cfg) continue;
+    const opt = document.createElement('option');
+    opt.value = key; opt.textContent = cfg.name;
+    sel.appendChild(opt);
+  }
+  sel.value = 'microcontroller';
+  onConfigChange();
+}
+
+function onConfigChange(){
+  const cfg = CONFIGS_DATA[$('config-select').value];
+  if (!cfg) return;
+  applyConfigLabels(cfg);
+  $('config-hint').textContent = cfg.description || '';
+  $('cycles').value = cfg.max_sim_cycles;
+  $('cycles-val').textContent = cfg.max_sim_cycles;
+  ensureCyclesForCurrentExample();
+}
+$('config-select').addEventListener('change', onConfigChange);
+$('cycles').addEventListener('input', () => { $('cycles-val').textContent = $('cycles').value; });
+
+// Bumps the cycles slider up for loop-heavy example programs whose
+// minCycles exceeds whatever's currently set, without ever lowering it.
+function ensureCyclesForCurrentExample(){
+  const key = $('example-select') ? $('example-select').value : null;
+  const meta = SIMPLE_EXAMPLES.find(ex => ex.key === key);
+  const cyclesEl = $('cycles');
+  if (meta && meta.minCycles && Number(cyclesEl.value) < meta.minCycles){
+    cyclesEl.value = Math.min(meta.minCycles, Number(cyclesEl.max));
+    $('cycles-val').textContent = cyclesEl.value;
+  }
+}
+
+// Relabels the register cells for the active architecture (register
+// names and address width differ by profile — see cpu.py's CPUConfig
+// presets) and records the *keys* to read out of reg_snapshot, since
+// as_dict() renames A/B/C/D to e.g. RAX/RBX/RCX/RDX on modern profiles.
+function applyConfigLabels(cfg){
+  const names = (cfg && cfg.gp_register_names && cfg.gp_register_names.length)
+    ? cfg.gp_register_names : ['A','B','C','D'];
+  const accName = names[0];
+  const gpNames = names.slice(1, 4); // always exactly 3 real GP registers underneath
+  window.__accKey = accName;
+  window.__gpKeys = gpNames;
+  window.__addrDigits = Math.max(2, Math.ceil((cfg ? cfg.address_bits : 8) / 4));
+
+  $('reg-ACC').querySelector('.rname').textContent = `Accumulator (${accName})`;
+  const grid = $('gp-grid');
+  grid.innerHTML = '';
+  gpNames.forEach((nm, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'reg-cell';
+    cell.id = 'reg-GP' + i;
+    cell.innerHTML = `<div class="rname">${nm}</div><div class="rval">0x00</div>`;
+    grid.appendChild(cell);
+  });
+}
+
+// ── bootstrap: load curated example list, default program ─────────────
+async function loadExamples(){
+  const sel = $('example-select');
+  sel.innerHTML = '';
+  let currentGroup = null;
+  let groupEl = null;
+  for (const ex of SIMPLE_EXAMPLES){
+    if (ex.group !== currentGroup){
+      currentGroup = ex.group;
+      groupEl = document.createElement('optgroup');
+      groupEl.label = currentGroup;
+      sel.appendChild(groupEl);
+    }
+    const opt = document.createElement('option');
+    opt.value = ex.key; opt.textContent = ex.label;
+    groupEl.appendChild(opt);
+  }
+  try{
+    const res = await fetch('/examples');
+    const all = await res.json();
+    window.__examplesSource = all;
+    sel.value = 'add_two_numbers';
+    $('asm-input').value = all['add_two_numbers'] || defaultProgram();
+  }catch(e){
+    $('asm-input').value = defaultProgram();
+  }
+}
+
+function defaultProgram(){
+  return [
+    '; Add two numbers together.',
+    '; load a first value,',
+    '; add a second value, then save the result.',
+    '',
+    '        LDI   9        ; A <- 9   (first number)',
+    '        ADD   10       ; A <- A + 10   (second number)',
+    '        STORE 0x20     ; save the result to memory',
+    '        HLT',
+  ].join('\n');
+}
+
+function renderCompare(key){
+  const entry = COMPARE_DATA[key];
+  const panel = $('compare-panel');
+  if (!entry){ panel.classList.remove('show'); return; }
+  panel.classList.add('show');
+  $('compare-cpp').textContent = entry.cpp;
+  const src = (window.__examplesSource || {})[key] || '';
+  const cleaned = src.split('\n')
+    .filter(line => line.trim() !== '' && !/^\s*;/.test(line))
+    .join('\n');
+  $('compare-asm').textContent = cleaned;
+  $('compare-note').textContent = entry.note;
+}
+
+$('example-select').addEventListener('change', (e) => {
+  const src = window.__examplesSource || {};
+  $('asm-input').value = src[e.target.value] || defaultProgram();
+  renderCompare(e.target.value);
+  // Some loop-heavy programs (Fibonacci, repeated-addition multiply,
+  // doubling) need more cycles than a given architecture's default
+  // budget, mostly because of cache-miss stalls on every LOAD/STORE.
+  // Bump the slider up for those rather than leaving the run truncated.
+  ensureCyclesForCurrentExample();
+});
+
+// ── run the program ─────────────────────────────────────────────────
+$('btn-run').addEventListener('click', runProgram);
+
+async function runProgram(){
+  const asm_text = $('asm-input').value;
+  $('asm-error').hidden = true;
+  $('btn-run').disabled = true;
+  stopPlaying();
+  try{
+    const res = await fetch('/run_asm', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        asm_text,
+        config: $('config-select').value || 'microcontroller',
+        max_cycles: Number($('cycles').value) || undefined,
+        stdin: $('stdin-input').value,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error){
+      $('asm-error').hidden = false;
+      $('asm-error').textContent = data.error || 'Assembly failed.';
+      $('btn-run').disabled = false;
+      return;
+    }
+    runData = data;
+    applyConfigLabels(runData.config); // authoritative — reconcile with the server's echoed config
+    buildAddrIndex();
+    buildListing();
+    // Drop cache-miss stall steps — this view keeps the memory-hierarchy
+    // model out of scope, matching how the course page presents the
+    // fetch-execute cycle as a fixed-cost round trip.
+    steps = (data.steps || []).filter(s => !/^STALL/.test(s.description || ''));
+    stepIdx = -1;
+    currentInstrAddr = null;
+    $('progress-label').textContent = `Step 0 / ${steps.length}`;
+    resetVisualState();
+    stepForward(); // land on step 0
+  }catch(e){
+    $('asm-error').hidden = false;
+    $('asm-error').textContent = 'Could not reach the simulator: ' + e.message;
+  }finally{
+    $('btn-run').disabled = false;
+  }
+}
+
+function buildAddrIndex(){
+  addrToLine = {};
+  for (const row of (runData.disassembly || [])){
+    addrToLine[row.addr] = row;
+  }
+}
+
+function buildListing(){
+  const el = $('listing');
+  el.innerHTML = '';
+  const aw = window.__addrDigits || 2;
+  for (const row of (runData.disassembly || [])){
+    const div = document.createElement('div');
+    div.className = 'listing-row';
+    div.dataset.addr = row.addr;
+    const operandTxt = (row.operand !== null && row.operand !== undefined)
+      ? ' ' + (row.operand_kind === 'addr' ? '0x' + row.operand.toString(16).toUpperCase().padStart(2,'0') : row.operand)
+      : '';
+    const src = row.source ? row.source.trim() : (row.mnemonic + operandTxt);
+    div.innerHTML = `<span class="addr">0x${row.addr.toString(16).toUpperCase().padStart(aw,'0')}</span><span>${src}</span>`;
+    el.appendChild(div);
+  }
+}
+
+function highlightListing(addr){
+  document.querySelectorAll('#listing .listing-row').forEach(r => {
+    r.classList.toggle('active', Number(r.dataset.addr) === addr);
+  });
+}
+
+// ── playback controls ───────────────────────────────────────────────
+$('btn-next').addEventListener('click', () => { stopPlaying(); stepForward(); });
+$('btn-prev').addEventListener('click', () => { stopPlaying(); stepBackward(); });
+$('btn-reset').addEventListener('click', () => { stopPlaying(); stepIdx = -1; currentInstrAddr = null; resetVisualState(); stepForward(); });
+$('btn-play').addEventListener('click', togglePlay);
+
+function togglePlay(){
+  if (playTimer){ stopPlaying(); return; }
+  if (!steps.length) return;
+  $('btn-play').classList.add('playing');
+  $('btn-play').textContent = '❚❚';
+  playTimer = setInterval(() => {
+    if (stepIdx >= steps.length - 1){ stopPlaying(); return; }
+    stepForward();
+  }, Number($('speed').value));
+}
+function stopPlaying(){
+  if (playTimer){ clearInterval(playTimer); playTimer = null; }
+  $('btn-play').classList.remove('playing');
+  $('btn-play').textContent = '▶';
+}
+
+function stepForward(){
+  if (stepIdx >= steps.length - 1) return;
+  stepIdx += 1;
+  renderStep(steps[stepIdx]);
+}
+function stepBackward(){
+  if (stepIdx <= 0){
+    stepIdx = -1; currentInstrAddr = null; resetVisualState();
+    return;
+  }
+  stepIdx -= 1;
+  // Simplest correct way to reconstruct state at stepIdx: replay from 0.
+  currentInstrAddr = null;
+  for (let i = 0; i <= stepIdx; i++) trackInstrAddr(steps[i]);
+  renderStep(steps[stepIdx], /*rewind*/true);
+}
+
+function trackInstrAddr(s){
+  if (/^FETCH — address bus/.test(s.description || '')){
+    currentInstrAddr = s.reg_snapshot ? s.reg_snapshot.MAR : currentInstrAddr;
+  }
+}
+
+// ── rendering ────────────────────────────────────────────────────────
+function resetVisualState(){
+  ['address','data','control'].forEach(b => {
+    $('dot-' + b).style.left = '0%';
+    document.querySelector(`.bus-lane[data-bus="${b}"]`).classList.remove('active');
+    $('val-' + b).textContent = '—';
+  });
+  document.querySelectorAll('.cycle-stage').forEach(s => s.classList.remove('active'));
+  $('block-cu').classList.remove('active');
+  $('block-alu').classList.remove('active');
+  document.querySelectorAll('.reg-cell').forEach(c => c.classList.remove('active'));
+  $('mem-addr').textContent = '—';
+  $('mem-value').textContent = '—';
+  $('narration-phase').textContent = 'IDLE';
+  $('narration-desc').textContent = 'Assemble a program on the left to start the cycle.';
+  $('activity-log').innerHTML = '<span style="color:var(--ink-faint)">Nothing yet.</span>';
+  $('terminal-screen').innerHTML = '<span class="terminal-empty">Nothing printed yet.</span>';
+  highlightListing(null);
+}
+
+const PHASE_LABEL = { fetch:'Fetch', decode:'Decode', execute:'Execute', writeback:'Execute' };
+
+function renderStep(s, isRewind){
+  if (!isRewind) trackInstrAddr(s);
+  $('progress-label').textContent = `Step ${stepIdx + 1} / ${steps.length}`;
+
+  const phaseKey = (s.phase === 'writeback') ? 'execute' : s.phase;
+  document.querySelectorAll('.cycle-stage').forEach(el => {
+    el.classList.toggle('active', el.dataset.stage === phaseKey);
+  });
+  $('block-cu').classList.toggle('active', phaseKey === 'fetch' || phaseKey === 'decode');
+  $('block-alu').classList.toggle('active', phaseKey === 'execute');
+
+  $('narration-phase').textContent = PHASE_LABEL[s.phase] || s.phase.toUpperCase();
+  $('narration-desc').textContent = s.description;
+  $('narration-detail').textContent = s.detail;
+
+  renderRegisters(s.reg_snapshot);
+  renderFlags(s.flags_snapshot);
+  renderBus(s.bus);
+  renderTerminal(s.cycle);
+  highlightListing(currentInstrAddr);
+  logActivity(s);
+}
+
+function fmtHex(v, digits){
+  if (v === null || v === undefined) return '—';
+  return '0x' + Number(v).toString(16).toUpperCase().padStart(digits || 2, '0');
+}
+
+// Appends " 'x'" when v is a printable ASCII byte — used on I/O bus
+// values and the terminal, where seeing the character alongside the
+// hex is the whole point.
+function charSuffix(v){
+  if (v === null || v === undefined) return '';
+  return (v >= 32 && v < 127) ? ` '${String.fromCharCode(v)}'` : '';
+}
+function escapeHtml(s){
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+let prevRegs = {};
+function renderRegisters(regs){
+  if (!regs) return;
+  const aw = window.__addrDigits || 2;
+  const accKey = window.__accKey || 'A';
+  const gpKeys = window.__gpKeys || ['B', 'C', 'D'];
+
+  const map = [
+    ['PC', regs.PC, aw], ['IR', regs.IR, 2], ['SP', regs.SP, aw],
+    ['MAR', regs.MAR, aw], ['MDR', regs.MDR, 2], ['ACC', regs[accKey], 2],
+  ];
+  for (const [key, val, digits] of map){
+    const cell = $('reg-' + key);
+    cell.querySelector('.rval').textContent = key === 'IR'
+      ? (regs.CIR ? `${fmtHex(val)} (${regs.CIR})` : fmtHex(val))
+      : fmtHex(val, digits);
+    cell.classList.toggle('active', prevRegs[key] !== undefined && prevRegs[key] !== val);
+  }
+  gpKeys.forEach((gpKey, i) => {
+    const cell = $('reg-GP' + i);
+    if (!cell) return;
+    cell.querySelector('.rval').textContent = fmtHex(regs[gpKey]);
+    cell.classList.toggle('active', prevRegs['GP'+i] !== undefined && prevRegs['GP'+i] !== regs[gpKey]);
+  });
+
+  const table = $('reg-table-special');
+  table.innerHTML = '';
+  const rows = [
+    ['PC — Program Counter', fmtHex(regs.PC, aw)],
+    ['IR — Instruction Reg.', regs.CIR ? `${fmtHex(regs.IR)} (${regs.CIR})` : fmtHex(regs.IR)],
+    ['SP — Stack Pointer', fmtHex(regs.SP, aw)],
+    ['MAR — Memory Address', fmtHex(regs.MAR, aw)],
+    ['MDR — Memory Data', fmtHex(regs.MDR)],
+    [`Accumulator (${accKey})`, fmtHex(regs[accKey])],
+    ...gpKeys.map(k => [`${k} (general purpose)`, fmtHex(regs[k])]),
+  ];
+  for (const [name, val] of rows){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${name}</td><td>${val}</td>`;
+    table.appendChild(tr);
+  }
+  prevRegs = { PC: regs.PC, IR: regs.IR, SP: regs.SP, MAR: regs.MAR, MDR: regs.MDR, ACC: regs[accKey] };
+  gpKeys.forEach((gpKey, i) => { prevRegs['GP'+i] = regs[gpKey]; });
+}
+
+function renderFlags(flags){
+  if (!flags) return; // keep last-shown flags when a step doesn't update them
+  const row = $('flags-row');
+  row.innerHTML = '';
+  for (const [name, val] of Object.entries(flags)){
+    const chip = document.createElement('span');
+    chip.className = 'flag-chip' + (val ? ' set' : '');
+    chip.textContent = name;
+    row.appendChild(chip);
+  }
+}
+
+function renderBus(bus){
+  ['address','data','control'].forEach(b => {
+    document.querySelector(`.bus-lane[data-bus="${b}"]`).classList.remove('active');
+  });
+  if (!bus){
+    $('mem-addr').textContent = '—';
+    $('mem-value').textContent = '—';
+    return;
+  }
+  const isWrite = bus.control === 'WR' || bus.control === 'IOW';
+  const isIO = bus.control === 'IOR' || bus.control === 'IOW';
+  const aw = window.__addrDigits || 2;
+
+  // Address bus: always CPU -> memory.
+  activateLane('address', bus.address !== null && bus.address !== undefined, 0, 100);
+  $('val-address').textContent = fmtHex(bus.address, aw);
+
+  // Data bus: bi-directional — direction follows read vs write.
+  const hasData = bus.data !== null && bus.data !== undefined;
+  activateLane('data', hasData, isWrite ? 0 : 100, isWrite ? 100 : 0);
+  $('val-data').textContent = hasData ? (fmtHex(bus.data) + (isIO ? charSuffix(bus.data) : '')) : '—';
+
+  // Control bus: signal asserted by the control unit, CPU -> memory.
+  activateLane('control', !!bus.control, 0, 100);
+  $('val-control').textContent = bus.control || '—';
+
+  $('mem-addr').textContent = fmtHex(bus.address, aw);
+  $('mem-value').textContent = hasData ? (fmtHex(bus.data) + (isIO ? charSuffix(bus.data) : '')) : '—';
+}
+
+function activateLane(name, on, fromPct, toPct){
+  const lane = document.querySelector(`.bus-lane[data-bus="${name}"]`);
+  const dot = $('dot-' + name);
+  if (!on){ return; }
+  lane.classList.add('active');
+  dot.style.left = fromPct + '%';
+  // force reflow so the transition always plays, even across identical steps
+  void dot.offsetWidth;
+  dot.style.left = toPct + '%';
+}
+
+function logActivity(s){
+  if (!s.bus) return;
+  const log = $('activity-log');
+  if (log.querySelector('span')) log.innerHTML = '';
+  const row = document.createElement('div');
+  row.className = 'log-row newest';
+  const ctrl = s.bus.control || '';
+  const opClass = (ctrl === 'WR' || ctrl === 'IOW') ? 'wr' : 'rd';
+  const opLabel = (ctrl === 'WR' || ctrl === 'IOW') ? 'W' : 'R';
+  const isIO = ctrl === 'IOR' || ctrl === 'IOW';
+  const dataTxt = (s.bus.data !== null && s.bus.data !== undefined)
+    ? fmtHex(s.bus.data) + (isIO ? charSuffix(s.bus.data) : '') : '';
+  row.innerHTML = `<span class="op ${opClass}">${opLabel}</span><span>${fmtHex(s.bus.address, window.__addrDigits||2)}${dataTxt ? ' → ' + dataTxt : ''}</span><span>cyc ${s.cycle}</span>`;
+  log.appendChild(row);
+  log.scrollTop = log.scrollHeight;
+  if (log.children.length > 60) log.removeChild(log.firstChild);
+}
+
+// Rebuilds the terminal readout from the server's pre-extracted
+// io_history, filtered to every OUT event up to the current cycle.
+// Matching on cycle (not step index) keeps this correct even though
+// `steps` has had cache-stall entries filtered out of it.
+function renderTerminal(uptoCycle){
+  const term = $('terminal-screen');
+  const events = ((runData && runData.io_history) || [])
+    .filter(e => e.dir === 'out' && e.cycle <= uptoCycle);
+  if (!events.length){
+    term.innerHTML = '<span class="terminal-empty">Nothing printed yet.</span>';
+    return;
+  }
+  const html = events.map(e => {
+    const v = e.value;
+    if (v >= 32 && v < 127) return escapeHtml(String.fromCharCode(v));
+    if (v === 10 || v === 13) return '<br>';
+    return '<span style="color:var(--ink-faint)">·</span>'; // non-printable byte
+  }).join('');
+  term.innerHTML = html + '<span class="terminal-cursor"></span>';
+}
+
+// ── init ─────────────────────────────────────────────────────────────
+async function init(){
+  await loadConfigs();
+  await loadExamples();
+  renderCompare($('example-select').value);
+  await runProgram();
+}
+init();
+</script>
+</body>
+</html>
