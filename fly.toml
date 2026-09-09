@@ -1,0 +1,24 @@
+# fly.toml app configuration
+# Rename `app` to something unique before your first deploy —
+# Fly app names are global, so "cpu-visualiser" is likely taken.
+
+app = "cpu-visualiser"
+primary_region = "lhr"  # London; change to whichever region is closest to you
+
+[build]
+
+[env]
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256
